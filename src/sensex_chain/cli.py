@@ -1,4 +1,4 @@
-"""Command-line entry point for a scheduled data-only worker."""
+﻿"""Command-line entry point for a scheduled data-only worker."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from datetime import datetime
 
 import requests
 
-from .auth import FyersTokenProvider
+from .auth import AutomatedFyersTokenProvider, FallbackTokenProvider, FyersTokenProvider
 from .cache import LatestMarketCache
 from .config import ConfigurationError, RuntimeConfig
 from .instruments import FyersInstrumentCatalog
@@ -44,9 +44,11 @@ def main(argv: list[str] | None = None) -> int:
         http = requests.Session()
         catalog = FyersInstrumentCatalog.download(http)
         gateway = GoogleSheetGateway.from_service_account_json(config.google_service_account_json, config.sheet_id)
+        automated = AutomatedFyersTokenProvider(config, http, lambda: int(time.time()))
+        refresh_fallback = FyersTokenProvider(config, http) if config.fyers_refresh_token else None
         worker = LiveChainWorker(
             catalog=catalog,
-            token_provider=FyersTokenProvider(config, http),
+            token_provider=FallbackTokenProvider(automated, refresh_fallback),
             feed_factory=lambda token: FyersDataFeed(f"{config.fyers_client_id}:{token}"),
             cache=LatestMarketCache(),
             gateway=gateway,

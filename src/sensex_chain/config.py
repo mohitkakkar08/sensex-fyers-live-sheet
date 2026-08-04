@@ -1,4 +1,4 @@
-"""Runtime configuration sourced only from environment variables."""
+﻿"""Runtime configuration sourced only from environment variables."""
 
 from __future__ import annotations
 
@@ -16,10 +16,13 @@ class RuntimeConfig:
 
     fyers_client_id: str
     fyers_secret_key: str
-    fyers_refresh_token: str
+    fyers_user_id: str
     fyers_pin: str
+    fyers_totp_secret: str
+    fyers_redirect_uri: str
     google_service_account_json: str
     sheet_id: str
+    fyers_refresh_token: str | None = None
     flush_seconds: int = 10
 
     @classmethod
@@ -27,8 +30,10 @@ class RuntimeConfig:
         required = (
             "FYERS_CLIENT_ID",
             "FYERS_SECRET_KEY",
-            "FYERS_REFRESH_TOKEN",
+            "FYERS_USER_ID",
             "FYERS_PIN",
+            "FYERS_TOTP_SECRET",
+            "FYERS_REDIRECT_URI",
             "GOOGLE_SERVICE_ACCOUNT_JSON",
             "GOOGLE_SHEET_ID",
         )
@@ -37,7 +42,10 @@ class RuntimeConfig:
             raise ConfigurationError(
                 "Missing required environment variable(s): " + ", ".join(missing)
             )
-        return cls(*(environ[name] for name in required))
+        return cls(
+            *(environ[name] for name in required),
+            fyers_refresh_token=environ.get("FYERS_REFRESH_TOKEN", "").strip() or None,
+        )
 
     def __repr__(self) -> str:
         return "RuntimeConfig(redacted=True, flush_seconds=%d)" % self.flush_seconds

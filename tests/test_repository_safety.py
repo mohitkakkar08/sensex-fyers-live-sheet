@@ -1,14 +1,16 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from pathlib import Path
 
 
-def test_workflow_has_required_schedules_and_secret_references() -> None:
+def test_workflow_has_required_schedules_and_automated_login_secret_references() -> None:
     workflow = Path(".github/workflows/sensex-live.yml").read_text(encoding="utf-8")
 
     assert 'cron: "45 3 * * 1-5"' in workflow
     assert 'cron: "45 6 * * 1-5"' in workflow
-    assert "FYERS_PIN: ${{ secrets.FYERS_PIN }}" in workflow
+    for name in ("FYERS_USER_ID", "FYERS_TOTP_SECRET", "FYERS_REDIRECT_URI"):
+        assert f"{name}: ${{{{ secrets.{name} }}}}" in workflow
+    assert "FYERS_REFRESH_TOKEN: ${{ secrets.FYERS_REFRESH_TOKEN }}" not in workflow
     assert "GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}" in workflow
 
 
@@ -19,3 +21,13 @@ def test_production_source_contains_no_trade_api_names() -> None:
     prohibited = ("place_order", "modify_order", "cancel_order", "tradebook", "holdings", "funds")
 
     assert not any(word in source for word in prohibited)
+
+
+def test_examples_use_totp_without_token_files() -> None:
+    example = Path(".env.example").read_text(encoding="utf-8")
+    readme = Path("README.md").read_text(encoding="utf-8")
+
+    assert "FYERS_TOTP_SECRET=your_base32_totp_secret" in example
+    assert "FYERS_REFRESH_TOKEN=" not in example
+    assert "FYERS_TOTP_SECRET" in readme
+    assert "access_token.log" not in readme
