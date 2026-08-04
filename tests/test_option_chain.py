@@ -62,7 +62,7 @@ def test_fyers_option_chain_enricher_requests_current_chain_with_greeks_and_upda
 
     enricher.refresh(chain(), cache)
 
-    assert model.request == {"symbol": "BSE:SENSEX-INDEX", "strikecount": 0, "timestamp": "", "greeks": "1"}
+    assert model.request == {"symbol": "BSE:SENSEX-INDEX", "strikecount": 1, "timestamp": "", "greeks": "1"}
     assert enricher.diagnostic_code == "OPTION_CHAIN_OK"
     row = cache.snapshot(chain(), datetime(2026, 8, 4, 9, 15, tzinfo=KOLKATA)).rows[0]
     assert row.call.oi == 400
@@ -91,3 +91,21 @@ def test_fyers_option_chain_enricher_backs_off_without_repeating_a_429_request()
 
     assert model.calls == 1
     assert enricher.diagnostic_code == "RATE_LIMIT_BACKOFF_30S"
+
+
+def test_strike_count_covers_every_strike_in_the_selected_expiry() -> None:
+    from datetime import date
+    from decimal import Decimal
+    from sensex_chain.instruments import CurrentExpiryChain, OptionContract
+    from sensex_chain.option_chain import _strike_count
+
+    chain = CurrentExpiryChain(
+        date(2026, 8, 6),
+        tuple(
+            OptionContract(f"BSE:SENSEX26AUG{strike}{option_type}", "SENSEX", date(2026, 8, 6), Decimal(str(strike)), option_type)
+            for strike in (80000, 80100, 80200)
+            for option_type in ("CE", "PE")
+        ),
+    )
+
+    assert _strike_count(chain) == 3

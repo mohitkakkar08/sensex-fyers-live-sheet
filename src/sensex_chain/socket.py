@@ -1,4 +1,4 @@
-﻿"""Small adapter around FYERS API v3 DataSocket only."""
+"""Small adapter around FYERS API v3 DataSocket only."""
 from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Protocol
@@ -22,10 +22,11 @@ class FyersDataFeed:
    if isinstance(message,Mapping):on_tick(message)
   def on_error(_message:Any)->None:self._diagnostic_code='SOCKET_RUNTIME_ERROR'
   try:
-   self._socket=self._socket_factory(access_token=self._access_token,on_connect=on_connect,on_message=on_message,on_error=on_error,on_close=lambda _message:None,litemode=False,write_to_file=False,reconnect=True)
+   self._socket=self._socket_factory(access_token=self._access_token,on_connect=on_connect,on_message=on_message,on_error=on_error,on_close=lambda _message:self._mark_closed(),litemode=False,write_to_file=False,reconnect=True)
    self._socket.connect()
   except Exception as exc:
    self._socket=None; self._subscription_ready=False; self._diagnostic_code='SOCKET_START_FAILED'; raise DataFeedError('SOCKET_START_FAILED') from exc
+ def _mark_closed(self)->None:self._diagnostic_code='SOCKET_CLOSED'
  def stop(self)->None:
   if self._socket is not None and self._subscription_ready:
    self._socket.close_connection()

@@ -4,9 +4,13 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
+import requests
+
 from .cache import LatestMarketCache
 from .instruments import CurrentExpiryChain, INDEX_SYMBOL
 from .rate_limit import FyersRequestGate
+
+OPTION_CHAIN_TIMEOUT_SECONDS = 15
 
 
 class OptionChainError(RuntimeError):
@@ -67,6 +71,16 @@ def _lookup(record: Mapping[str, Any], aliases: tuple[str, ...]) -> object | Non
     return None
 
 
+class _TimeoutSession(requests.Session):
+    def __init__(self, timeout_seconds: float) -> None:
+        super().__init__()
+        self._timeout_seconds = timeout_seconds
+
+    def request(self, method: str, url: str, **kwargs: Any) -> requests.Response:
+        kwargs.setdefault("timeout", self._timeout_seconds)
+        return super().request(method, url, **kwargs)
+
+
 class FyersOptionChainEnricher:
     """One bounded FYERS option-chain request per sheet refresh."""
 
@@ -84,7 +98,7 @@ class FyersOptionChainEnricher:
             self.diagnostic_code = f"RATE_LIMIT_BACKOFF_{permission.retry_in_seconds}S"
             return
         try:
-            response = self._client().optionchain(data={"symbol": INDEX_SYMBOL, "strikecount": 0, "timestamp": "", "greeks": "1"})
+            response = self._client().optionchain(data={"symbol": INDEX_SYMBOL, "strikecount": _strike_count(chain), "timestamp": "", "greeks": "1"})
             if _is_rate_limited(response):
                 delay = self._request_gate.on_rate_limit(_retry_after_seconds(response))
                 self.diagnostic_code = f"RATE_LIMIT_BACKOFF_{delay}S"
@@ -96,6 +110,8 @@ class FyersOptionChainEnricher:
             self.diagnostic_code = "OPTION_CHAIN_OK"
         except OptionChainError as exc:
             self.diagnostic_code = str(exc)
+        except requests.Timeout:
+            self.diagnostic_code = "OPTION_CHAIN_TIMEOUT"
         except Exception:
             self.diagnostic_code = "OPTION_CHAIN_REQUEST_FAILED"
 
@@ -103,6 +119,12 @@ class FyersOptionChainEnricher:
         if self._model is None:
             self._model = self._model_factory(self._client_id, self._token)
         return self._model
+
+
+def _strike_count(chain: CurrentExpiryChain) -> int:
+    # The FYERS API returns this many strikes on each side of ATM. Requesting the
+    # expiry's full strike count ensures every contract shown in Sheets is eligible.
+    return max(1, len({contract.strike for contract in chain.contracts}))
 
 
 def _is_rate_limited(response: object) -> bool:
@@ -128,4 +150,9 @@ def _retry_after_seconds(response: object) -> float | None:
 
 def _sdk_option_chain_model(client_id: str, token: str) -> object:
     from fyers_apiv3 import fyersModel
-    return fyersModel.FyersModel(client_id=client_id, token=token, is_async=False)
+
+    model = fyersModel.FyersModel(client_id=client_id, token=token, is_async=False)
+    service = getattr(model, "service", None)
+    if isinstance(getattr(service, "session", None), requests.Session):
+        service.session = _TimeoutSession(OPTION_CHAIN_TIMEOUT_SECONDS)
+    return model

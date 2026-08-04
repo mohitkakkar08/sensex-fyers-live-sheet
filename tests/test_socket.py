@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from typing import Callable, Mapping
 
@@ -72,3 +72,20 @@ def test_socket_does_not_close_before_the_sdk_reports_subscription_ready() -> No
     feed.stop()
 
     assert created[0].close_called is False
+
+
+def test_socket_marks_a_closed_connection_as_not_live() -> None:
+    created: list[FakeDataSocket] = []
+
+    def factory(**kwargs: object) -> FakeDataSocket:
+        socket = FakeDataSocket(**kwargs)
+        created.append(socket)
+        return socket
+
+    feed = FyersDataFeed("app:token", socket_factory=factory)
+    feed.start(["BSE:SENSEX-INDEX"], lambda tick: None)
+    closed = created[0].kwargs["on_close"]
+    assert callable(closed)
+    closed({"reason": "connection closed"})
+
+    assert feed.diagnostic_code == "SOCKET_CLOSED"

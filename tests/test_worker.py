@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
@@ -145,3 +145,38 @@ def test_worker_enriches_option_chain_fields_before_writing_snapshot() -> None:
     row = cache.snapshot(Catalog().current_sensex_chain(date(2026, 8, 4)), Clock().now()).rows[0]
     assert row.call.oi == 400
     assert row.call.iv == 16.2
+
+
+class FailedAfterTickFeed(Feed):
+    diagnostic_code = "SOCKET_RUNTIME_ERROR"
+
+    def start(self, symbols, on_tick) -> None:
+        on_tick({"symbol": "BSE:SENSEX-INDEX", "ltp": 80000})
+        on_tick({"symbol": "BSE:SENSEX26AUG80000CE", "ltp": 100})
+
+
+def test_worker_does_not_report_live_after_a_socket_failure() -> None:
+    gateway = Gateway()
+    worker = LiveChainWorker(Catalog(), TokenProvider(), lambda token: FailedAfterTickFeed(), LatestMarketCache(), gateway, Clock(), 10)
+
+    assert worker.run(SessionSegment.MORNING, max_cycles=1) == 0
+    assert gateway.statuses[0].state == "PARTIAL_LIVE"
+    assert gateway.statuses[0].diagnostic_code == "SOCKET_RUNTIME_ERROR"
+
+
+def test_worker_retries_the_next_cycle_after_a_transient_sheet_failure() -> None:
+    from sensex_chain.sheet import SheetGatewayError
+
+    class FailOnceGateway(Gateway):
+        def write_snapshot(self, snapshot, status) -> None:
+            self.writes += 1
+            if self.writes == 1:
+                raise SheetGatewayError("SHEET_WRITE_FAILED")
+            self.statuses.append(status)
+
+    gateway = FailOnceGateway()
+    worker = LiveChainWorker(Catalog(), TokenProvider(), lambda token: Feed(), LatestMarketCache(), gateway, Clock(), 10)
+
+    assert worker.run(SessionSegment.MORNING, max_cycles=1) == 0
+    assert gateway.writes == 2
+    assert len(gateway.statuses) == 1

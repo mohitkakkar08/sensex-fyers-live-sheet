@@ -1,10 +1,12 @@
 """Supervisor that streams one SENSEX expiry until its market-time boundary."""
 from __future__ import annotations
+
 from collections.abc import Callable
 from typing import Protocol
+
 from .cache import LatestMarketCache
 from .instruments import CurrentExpiryChain, FyersInstrumentCatalog
-from .sheet import WorkerStatus
+from .sheet import SheetGatewayError, WorkerStatus
 from .timebox import SessionSegment, seconds_remaining
 
 
@@ -61,7 +63,11 @@ class LiveChainWorker:
                 if option_chain is not None:
                     option_chain.refresh(chain, self._cache)
                     option_chain_diagnostic = getattr(option_chain, "diagnostic_code", "OPTION_CHAIN_OK")
-                self._gateway.write_snapshot(self._cache.snapshot(chain, current), self._status(chain, current, feeds, option_chain_diagnostic))
+                try:
+                    self._gateway.write_snapshot(self._cache.snapshot(chain, current), self._status(chain, current, feeds, option_chain_diagnostic))
+                except SheetGatewayError:
+                    self._clock.sleep(min(self._flush_seconds, seconds_remaining(current, segment)))
+                    continue
                 cycles += 1
                 if max_cycles is not None and cycles >= max_cycles:
                     break
@@ -73,9 +79,11 @@ class LiveChainWorker:
 
     def _status(self, chain: CurrentExpiryChain, now, feeds: list[DataFeed], option_chain_diagnostic: str) -> WorkerStatus:
         coverage = self._cache.coverage(chain)
+        socket_error = next((getattr(feed, "diagnostic_code") for feed in feeds if getattr(feed, "diagnostic_code", "") in {"SOCKET_RUNTIME_ERROR", "SOCKET_START_FAILED", "SOCKET_CLOSED"}), None)
+        if socket_error:
+            return WorkerStatus("PARTIAL_LIVE", now, socket_error, coverage.tick_count, coverage.option_tick_count)
         if coverage.tick_count == 0:
-            socket_error = next((getattr(feed, "diagnostic_code") for feed in feeds if getattr(feed, "diagnostic_code", "") in {"SOCKET_RUNTIME_ERROR", "SOCKET_START_FAILED"}), None)
-            return WorkerStatus.waiting_for_ticks(now, socket_error or "SOCKET_SUBSCRIBED_NO_TICKS")
+            return WorkerStatus.waiting_for_ticks(now, "SOCKET_SUBSCRIBED_NO_TICKS")
         if not coverage.has_underlying_tick or coverage.option_tick_count == 0:
             return WorkerStatus.partial_live(now, coverage.tick_count, coverage.option_tick_count)
         if option_chain_diagnostic not in {"OPTION_CHAIN_OK", "OPTION_CHAIN_DISABLED"}:

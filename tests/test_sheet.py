@@ -16,6 +16,14 @@ class FakeRequest:
         self._callback()
 
 
+class FakeReadRequest:
+    def __init__(self, values: list[list[object]]) -> None:
+        self._values = values
+
+    def execute(self) -> dict[str, list[list[object]]]:
+        return {"values": self._values}
+
+
 class FakeValues:
     def __init__(self, parent) -> None:
         self.parent = parent
@@ -28,6 +36,11 @@ class FakeValues:
 
         return FakeRequest(save)
 
+    def get(self, *, spreadsheetId: str, range: str) -> FakeReadRequest:
+        assert spreadsheetId == self.parent.expected_sheet_id
+        assert range == "SENSEX!R7:R500"
+        return FakeReadRequest(self.parent.existing_strikes)
+
 
 class FakeSpreadsheets:
     def __init__(self, parent) -> None:
@@ -38,10 +51,12 @@ class FakeSpreadsheets:
 
 
 class FakeSheetsService:
-    def __init__(self) -> None:
+    def __init__(self, existing_strikes: list[list[object]] | None = None) -> None:
         self.values_batch_updates = 0
         self.last_sheet_id = ""
         self.last_body: dict[str, object] = {}
+        self.expected_sheet_id = "sheet-id"
+        self.existing_strikes = existing_strikes or []
 
     def spreadsheets(self) -> FakeSpreadsheets:
         return FakeSpreadsheets(self)
@@ -158,3 +173,14 @@ def test_summary_and_chain_timestamps_use_plain_ist_display_format() -> None:
     chain_row = service.last_body["data"][1]["values"][1]
     assert summary_rows[3][11] == "04/08/2026 09:15:00 IST"
     assert chain_row[35] == "04/08/2026 09:15:00 IST"
+
+
+def test_write_snapshot_clears_stale_option_rows_from_a_previous_expiry() -> None:
+    service = FakeSheetsService(existing_strikes=[[80000], [80100]])
+    gateway = GoogleSheetGateway(service, "sheet-id")
+
+    gateway.write_snapshot(snapshot(), WorkerStatus.connected(snapshot().updated_at))
+
+    data = service.last_body["data"]
+    assert data[2]["range"] == "SENSEX!A8:AL8"
+    assert data[2]["values"] == [[""] * len(CHAIN_HEADERS)]
