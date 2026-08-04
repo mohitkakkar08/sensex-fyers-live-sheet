@@ -109,3 +109,44 @@ def test_strike_count_covers_every_strike_in_the_selected_expiry() -> None:
     )
 
     assert _strike_count(chain) == 3
+
+
+def test_fyers_future_depth_enricher_updates_future_oi_and_derives_change_from_pdoi() -> None:
+    from datetime import date, datetime
+    from sensex_chain.cache import LatestMarketCache
+    from sensex_chain.future_depth import FyersFutureDepthEnricher
+    from sensex_chain.instruments import CurrentExpiryChain, FutureContract
+    from sensex_chain.timebox import KOLKATA
+    from test_cache import chain
+
+    class RecordingDepthModel:
+        request = None
+
+        def depth(self, *, data):
+            self.request = data
+            return {
+                "s": "ok",
+                "d": {
+                    "BSE:SENSEX26AUGFUT": {
+                        "v": {"oi": 125000, "pdoi": 120500},
+                    },
+                },
+            }
+
+    current = CurrentExpiryChain(
+        date(2026, 8, 6),
+        chain().contracts,
+        future=FutureContract("BSE:SENSEX26AUGFUT", "SENSEX", date(2026, 8, 27)),
+    )
+    model = RecordingDepthModel()
+    cache = LatestMarketCache()
+    enricher = FyersFutureDepthEnricher("client-id", "token", model_factory=lambda client_id, token: model)
+
+    enricher.refresh(current, cache)
+
+    assert model.request == {"symbol": "BSE:SENSEX26AUGFUT", "ohlcv_flag": "1"}
+    assert enricher.diagnostic_code == "FUTURE_DEPTH_OK"
+    future = cache.snapshot(current, datetime(2026, 8, 5, 9, 15, tzinfo=KOLKATA)).future
+    assert future is not None
+    assert future.oi == 125000
+    assert future.oi_change == 4500

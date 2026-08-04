@@ -35,7 +35,7 @@ class OptionChainEnricher(Protocol):
 
 
 class LiveChainWorker:
-    def __init__(self, catalog: FyersInstrumentCatalog, token_provider: TokenProvider, feed_factory: Callable[[str], DataFeed], cache: LatestMarketCache, gateway: SheetGateway, clock: Clock, flush_seconds: int, option_chain_factory: Callable[[str], OptionChainEnricher] | None = None) -> None:
+    def __init__(self, catalog: FyersInstrumentCatalog, token_provider: TokenProvider, feed_factory: Callable[[str], DataFeed], cache: LatestMarketCache, gateway: SheetGateway, clock: Clock, flush_seconds: int, option_chain_factory: Callable[[str], OptionChainEnricher] | None = None, future_depth_factory: Callable[[str], OptionChainEnricher] | None = None) -> None:
         self._catalog = catalog
         self._token_provider = token_provider
         self._feed_factory = feed_factory
@@ -44,6 +44,7 @@ class LiveChainWorker:
         self._clock = clock
         self._flush_seconds = flush_seconds
         self._option_chain_factory = option_chain_factory
+        self._future_depth_factory = future_depth_factory
 
     def run(self, segment: SessionSegment, max_cycles: int | None = None) -> int:
         now = self._clock.now()
@@ -53,6 +54,7 @@ class LiveChainWorker:
         token = self._token_provider.access_token()
         feeds: list[DataFeed] = []
         option_chain = self._option_chain_factory(token) if self._option_chain_factory else None
+        future_depth = self._future_depth_factory(token) if self._future_depth_factory else None
         next_flush_at = self._clock.monotonic()
         try:
             feed = self._feed_factory(token)
@@ -65,8 +67,12 @@ class LiveChainWorker:
                 if option_chain is not None:
                     option_chain.refresh(chain, self._cache)
                     option_chain_diagnostic = getattr(option_chain, "diagnostic_code", "OPTION_CHAIN_OK")
+                future_depth_diagnostic = "FUTURE_DEPTH_DISABLED"
+                if future_depth is not None:
+                    future_depth.refresh(chain, self._cache)
+                    future_depth_diagnostic = getattr(future_depth, "diagnostic_code", "FUTURE_DEPTH_OK")
                 try:
-                    self._gateway.write_snapshot(self._cache.snapshot(chain, current), self._status(chain, current, feeds, option_chain_diagnostic))
+                    self._gateway.write_snapshot(self._cache.snapshot(chain, current), self._status(chain, current, feeds, option_chain_diagnostic, future_depth_diagnostic))
                 except SheetGatewayError:
                     next_flush_at = self._sleep_until_next_flush(next_flush_at, segment)
                     continue
@@ -89,7 +95,7 @@ class LiveChainWorker:
             self._clock.sleep(delay)
         return deadline
 
-    def _status(self, chain: CurrentExpiryChain, now, feeds: list[DataFeed], option_chain_diagnostic: str) -> WorkerStatus:
+    def _status(self, chain: CurrentExpiryChain, now, feeds: list[DataFeed], option_chain_diagnostic: str, future_depth_diagnostic: str) -> WorkerStatus:
         coverage = self._cache.coverage(chain)
         socket_error = next((getattr(feed, "diagnostic_code") for feed in feeds if getattr(feed, "diagnostic_code", "") in {"SOCKET_RUNTIME_ERROR", "SOCKET_START_FAILED", "SOCKET_CLOSED"}), None)
         if socket_error:
@@ -100,4 +106,7 @@ class LiveChainWorker:
             return WorkerStatus.partial_live(now, coverage.tick_count, coverage.option_tick_count)
         if option_chain_diagnostic not in {"OPTION_CHAIN_OK", "OPTION_CHAIN_DISABLED"}:
             return WorkerStatus("PARTIAL_LIVE", now, option_chain_diagnostic, coverage.tick_count, coverage.option_tick_count)
+        future_depth_healthy = future_depth_diagnostic in {"FUTURE_DEPTH_OK", "FUTURE_DEPTH_DISABLED", "FUTURE_DEPTH_NOT_APPLICABLE"} or future_depth_diagnostic.startswith("FUTURE_DEPTH_THROTTLED_")
+        if not future_depth_healthy:
+            return WorkerStatus("PARTIAL_LIVE", now, future_depth_diagnostic, coverage.tick_count, coverage.option_tick_count)
         return WorkerStatus.live(now, coverage.tick_count, coverage.option_tick_count)

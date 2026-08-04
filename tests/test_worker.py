@@ -43,6 +43,7 @@ class Gateway:
 
     def write_snapshot(self, snapshot, status) -> None:
         self.writes += 1
+        self.last_snapshot = snapshot
         self.statuses.append(status)
 
 
@@ -218,3 +219,34 @@ def test_worker_keeps_a_ten_second_cadence_when_a_cycle_takes_time() -> None:
 
     assert worker.run(SessionSegment.MORNING, max_cycles=2) == 0
     assert clock.sleeps == [7.0]
+
+
+def test_worker_enriches_future_oi_before_writing_snapshot() -> None:
+    from sensex_chain.instruments import FutureContract
+
+    class FutureCatalog(Catalog):
+        def current_sensex_chain(self, today: date) -> CurrentExpiryChain:
+            current = super().current_sensex_chain(today)
+            return CurrentExpiryChain(
+                current.expiry,
+                current.contracts,
+                future=FutureContract("BSE:SENSEX26AUGFUT", "SENSEX", date(2026, 8, 27)),
+            )
+
+    class FutureEnricher:
+        diagnostic_code = "FUTURE_DEPTH_OK"
+
+        def refresh(self, chain, cache) -> None:
+            cache.upsert({"symbol": "BSE:SENSEX26AUGFUT", "oi": 125000, "oi_change": 4500})
+
+    gateway = Gateway()
+    worker = LiveChainWorker(
+        FutureCatalog(), TokenProvider(), lambda token: Feed(), LatestMarketCache(), gateway, Clock(), 10,
+        future_depth_factory=lambda token: FutureEnricher(),
+    )
+
+    assert worker.run(SessionSegment.MORNING, max_cycles=1) == 0
+    future = gateway.last_snapshot.future
+    assert future is not None
+    assert future.oi == 125000
+    assert future.oi_change == 4500
