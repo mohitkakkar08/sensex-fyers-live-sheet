@@ -184,3 +184,18 @@ def test_write_snapshot_clears_stale_option_rows_from_a_previous_expiry() -> Non
     data = service.last_body["data"]
     assert data[2]["range"] == "SENSEX!A8:AL8"
     assert data[2]["values"] == [[""] * len(CHAIN_HEADERS)]
+
+
+def test_second_snapshot_omits_static_headers_and_uses_raw_values() -> None:
+    service = FakeSheetsService()
+    gateway = GoogleSheetGateway(service, "sheet-id")
+    status = WorkerStatus.connected(snapshot().updated_at)
+
+    gateway.write_snapshot(snapshot(), status)
+    gateway.write_snapshot(snapshot(), status)
+
+    data = service.last_body["data"]
+    assert service.last_body["valueInputOption"] == "RAW"
+    assert data[1]["range"] == "SENSEX!A7:AL7"
+    assert data[1]["values"] == [data[1]["values"][0]]
+    assert data[1]["values"][0] != CHAIN_HEADERS

@@ -50,6 +50,7 @@ class GoogleSheetGateway:
         self._sheet_id = sheet_id
         self._layout_ready = False
         self._previous_option_rows = 0
+        self._headers_written = False
 
     @classmethod
     def from_service_account_json(cls, service_account_json: str, sheet_id: str) -> "GoogleSheetGateway":
@@ -75,16 +76,18 @@ class GoogleSheetGateway:
             ).execute().get("values", [])
             self._previous_option_rows = sum(1 for row in existing_rows if row and row[0] not in (None, ""))
         except Exception:
-            # Stale-row cleanup is a safety enhancement; a read issue must not block live writes.
             self._previous_option_rows = 0
         self._layout_ready = True
 
     def write_snapshot(self, snapshot: ChainSnapshot, status: WorkerStatus) -> None:
         self.ensure_layout()
         row_count = len(snapshot.rows)
+        include_headers = not self._headers_written
+        chain_values = _chain_values(snapshot, include_headers=include_headers)
+        first_chain_row = 6 if include_headers else 7
         data = [
             {"range": f"{SHEET_NAME}!A1:AL4", "values": _summary_values(snapshot, status)},
-            {"range": f"{SHEET_NAME}!A6:AL{6 + row_count}", "values": _chain_values(snapshot)},
+            {"range": f"{SHEET_NAME}!A{first_chain_row}:AL{first_chain_row + len(chain_values) - 1}", "values": chain_values},
         ]
         if self._previous_option_rows > row_count:
             data.append({
@@ -94,9 +97,10 @@ class GoogleSheetGateway:
         try:
             self._sheets.spreadsheets().values().batchUpdate(
                 spreadsheetId=self._sheet_id,
-                body={"valueInputOption": "USER_ENTERED", "data": data},
+                body={"valueInputOption": "RAW", "data": data},
             ).execute()
             self._previous_option_rows = row_count
+            self._headers_written = True
         except Exception as exc:
             raise SheetGatewayError("SHEET_WRITE_FAILED") from exc
 
@@ -112,8 +116,8 @@ def _summary_values(snapshot: ChainSnapshot, status: WorkerStatus) -> list[list[
     ]
 
 
-def _chain_values(snapshot: ChainSnapshot) -> list[list[object]]:
-    values = [list(CHAIN_HEADERS)]
+def _chain_values(snapshot: ChainSnapshot, *, include_headers: bool) -> list[list[object]]:
+    values = [list(CHAIN_HEADERS)] if include_headers else []
     for row in snapshot.rows:
         c, p = row.call, row.put
         values.append([

@@ -103,7 +103,7 @@ class FyersOptionChainEnricher:
                 delay = self._request_gate.on_rate_limit(_retry_after_seconds(response))
                 self.diagnostic_code = f"RATE_LIMIT_BACKOFF_{delay}S"
                 return
-            ticks = extract_option_ticks(response, {contract.symbol for contract in chain.contracts})
+            ticks = extract_option_ticks(response, chain.option_symbols)
             for tick in ticks.values():
                 cache.upsert(tick)
             self._request_gate.on_success()
@@ -124,7 +124,7 @@ class FyersOptionChainEnricher:
 def _strike_count(chain: CurrentExpiryChain) -> int:
     # The FYERS API returns this many strikes on each side of ATM. Requesting the
     # expiry's full strike count ensures every contract shown in Sheets is eligible.
-    return max(1, len({contract.strike for contract in chain.contracts}))
+    return max(1, len(chain.strike_pairs))
 
 
 def _is_rate_limited(response: object) -> bool:

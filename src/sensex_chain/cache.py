@@ -58,13 +58,18 @@ class LatestMarketCache:
             self._ticks[tick.symbol] = tick if previous is None else _merge_tick(previous, tick)
     def coverage(self, chain: CurrentExpiryChain) -> MarketDataCoverage:
         with self._lock: symbols=set(self._ticks)
-        option_symbols={c.symbol for c in chain.contracts}
+        option_symbols=chain.option_symbols
         return MarketDataCoverage(len(symbols),len(symbols & option_symbols),INDEX_SYMBOL in symbols)
     def snapshot(self, chain: CurrentExpiryChain, now: datetime) -> ChainSnapshot:
         with self._lock: ticks=dict(self._ticks)
-        by_strike: dict[Decimal,dict[str,OptionContract]]={}
-        for c in chain.contracts: by_strike.setdefault(c.strike,{})[c.option_type]=c
-        rows=tuple(ChainRow(strike,ticks.get(contracts['CE'].symbol,MarketTick(contracts['CE'].symbol)),ticks.get(contracts['PE'].symbol,MarketTick(contracts['PE'].symbol))) for strike,contracts in sorted(by_strike.items()) if 'CE' in contracts and 'PE' in contracts)
+        rows = tuple(
+            ChainRow(
+                strike,
+                ticks.get(call.symbol, MarketTick(call.symbol)),
+                ticks.get(put.symbol, MarketTick(put.symbol)),
+            )
+            for strike, call, put in chain.strike_pairs
+        )
         return ChainSnapshot(chain.expiry,now,ticks.get(INDEX_SYMBOL,MarketTick(INDEX_SYMBOL)),ticks.get(INDIA_VIX_SYMBOL,MarketTick(INDIA_VIX_SYMBOL)),rows)
 
 def normalize_tick(raw_tick: Mapping[str, object]) -> MarketTick | None:

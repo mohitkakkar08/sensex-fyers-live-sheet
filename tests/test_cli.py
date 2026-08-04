@@ -14,3 +14,9 @@ def test_parser_accepts_safe_websocket_tick_debugging() -> None:
     args = build_parser().parse_args(["--segment", "afternoon", "--debug-ticks"])
 
     assert args.debug_ticks is True
+
+
+def test_system_clock_exposes_a_monotonic_timer() -> None:
+    from sensex_chain.cli import SystemClock
+
+    assert isinstance(SystemClock().monotonic(), float)

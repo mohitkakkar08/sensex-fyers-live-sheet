@@ -1,7 +1,8 @@
-﻿"""FYERS BSE derivatives-master parsing and current-expiry selection."""
+"""FYERS BSE derivatives-master parsing and current-expiry selection."""
 from __future__ import annotations
 import csv, io, re
 from dataclasses import dataclass
+from functools import cached_property
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Iterable, Sequence
@@ -14,9 +15,27 @@ class OptionContract:
     symbol:str; underlying:str; expiry:date; strike:Decimal; option_type:str
 @dataclass(frozen=True)
 class CurrentExpiryChain:
-    expiry:date; contracts:tuple[OptionContract,...]
-    @property
-    def symbols(self)->tuple[str,...]: return (INDEX_SYMBOL,INDIA_VIX_SYMBOL)+tuple(c.symbol for c in self.contracts)
+    expiry: date
+    contracts: tuple[OptionContract, ...]
+
+    @cached_property
+    def symbols(self) -> tuple[str, ...]:
+        return (INDEX_SYMBOL, INDIA_VIX_SYMBOL) + tuple(contract.symbol for contract in self.contracts)
+
+    @cached_property
+    def option_symbols(self) -> frozenset[str]:
+        return frozenset(contract.symbol for contract in self.contracts)
+
+    @cached_property
+    def strike_pairs(self) -> tuple[tuple[Decimal, OptionContract, OptionContract], ...]:
+        by_strike: dict[Decimal, dict[str, OptionContract]] = {}
+        for contract in self.contracts:
+            by_strike.setdefault(contract.strike, {})[contract.option_type] = contract
+        return tuple(
+            (strike, contracts["CE"], contracts["PE"])
+            for strike, contracts in sorted(by_strike.items())
+            if "CE" in contracts and "PE" in contracts
+        )
 class FyersInstrumentCatalog:
     def __init__(self,contracts:Iterable[OptionContract])->None: self._contracts=tuple(contracts)
     @classmethod

@@ -38,3 +38,10 @@ def test_malformed_tick_does_not_erase_previous_valid_tick() -> None:
     row = cache.snapshot(chain(), datetime(2026, 8, 4, 9, 15, tzinfo=KOLKATA)).rows[0]
 
     assert row.call.ltp == valid_tick["ltp"]
+
+
+def test_current_expiry_chain_reuses_option_symbols_and_strike_pairs() -> None:
+    current = chain()
+
+    assert current.option_symbols == frozenset({"BSE:SENSEX26AUG80000CE", "BSE:SENSEX26AUG80000PE"})
+    assert current.strike_pairs == ((Decimal("80000"), current.contracts[0], current.contracts[1]),)

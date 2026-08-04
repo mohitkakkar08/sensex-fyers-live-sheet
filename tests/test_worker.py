@@ -50,6 +50,9 @@ class Clock:
     def now(self) -> datetime:
         return datetime(2026, 8, 4, 9, 15, tzinfo=KOLKATA)
 
+    def monotonic(self) -> float:
+        return 0.0
+
     def sleep(self, seconds: float) -> None:
         assert seconds == 10
 
@@ -180,3 +183,38 @@ def test_worker_retries_the_next_cycle_after_a_transient_sheet_failure() -> None
     assert worker.run(SessionSegment.MORNING, max_cycles=1) == 0
     assert gateway.writes == 2
     assert len(gateway.statuses) == 1
+
+
+class CadenceClock:
+    def __init__(self) -> None:
+        self.elapsed = 0.0
+        self.sleeps: list[float] = []
+
+    def now(self) -> datetime:
+        return datetime(2026, 8, 4, 9, 15, tzinfo=KOLKATA)
+
+    def monotonic(self) -> float:
+        return self.elapsed
+
+    def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self.elapsed += seconds
+
+
+class DelayedGateway(Gateway):
+    def __init__(self, clock: CadenceClock) -> None:
+        super().__init__()
+        self._clock = clock
+
+    def write_snapshot(self, snapshot, status) -> None:
+        self._clock.elapsed += 3.0
+        super().write_snapshot(snapshot, status)
+
+
+def test_worker_keeps_a_ten_second_cadence_when_a_cycle_takes_time() -> None:
+    clock = CadenceClock()
+    gateway = DelayedGateway(clock)
+    worker = LiveChainWorker(Catalog(), TokenProvider(), lambda token: Feed(), LatestMarketCache(), gateway, clock, 10)
+
+    assert worker.run(SessionSegment.MORNING, max_cycles=2) == 0
+    assert clock.sleeps == [7.0]

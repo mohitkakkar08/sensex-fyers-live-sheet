@@ -15,6 +15,7 @@ from .timebox import KOLKATA, SessionSegment
 from .worker import LiveChainWorker
 class SystemClock:
  def now(self)->datetime:return datetime.now(KOLKATA)
+ def monotonic(self)->float:return time.monotonic()
  def sleep(self,seconds:float)->None:time.sleep(seconds)
 class DebugMarketCache(LatestMarketCache):
  """Prints a strictly bounded sample of market ticks for manual diagnostics."""

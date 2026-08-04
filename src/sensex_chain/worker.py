@@ -12,6 +12,7 @@ from .timebox import SessionSegment, seconds_remaining
 
 class Clock(Protocol):
     def now(self): ...
+    def monotonic(self) -> float: ...
     def sleep(self, seconds: float) -> None: ...
 
 
@@ -52,6 +53,7 @@ class LiveChainWorker:
         token = self._token_provider.access_token()
         feeds: list[DataFeed] = []
         option_chain = self._option_chain_factory(token) if self._option_chain_factory else None
+        next_flush_at = self._clock.monotonic()
         try:
             feed = self._feed_factory(token)
             feed.start(chain.symbols, self._cache.upsert)
@@ -66,16 +68,26 @@ class LiveChainWorker:
                 try:
                     self._gateway.write_snapshot(self._cache.snapshot(chain, current), self._status(chain, current, feeds, option_chain_diagnostic))
                 except SheetGatewayError:
-                    self._clock.sleep(min(self._flush_seconds, seconds_remaining(current, segment)))
+                    next_flush_at = self._sleep_until_next_flush(next_flush_at, segment)
                     continue
                 cycles += 1
                 if max_cycles is not None and cycles >= max_cycles:
                     break
-                self._clock.sleep(min(self._flush_seconds, seconds_remaining(current, segment)))
+                next_flush_at = self._sleep_until_next_flush(next_flush_at, segment)
             return 0
         finally:
             for feed in feeds:
                 feed.stop()
+
+    def _sleep_until_next_flush(self, previous_flush_at: float, segment: SessionSegment) -> float:
+        deadline = previous_flush_at + self._flush_seconds
+        current_monotonic = self._clock.monotonic()
+        while deadline <= current_monotonic:
+            deadline += self._flush_seconds
+        delay = min(deadline - current_monotonic, seconds_remaining(self._clock.now(), segment))
+        if delay > 0:
+            self._clock.sleep(delay)
+        return deadline
 
     def _status(self, chain: CurrentExpiryChain, now, feeds: list[DataFeed], option_chain_diagnostic: str) -> WorkerStatus:
         coverage = self._cache.coverage(chain)
