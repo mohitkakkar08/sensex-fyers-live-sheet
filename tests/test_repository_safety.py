@@ -21,3 +21,13 @@ def test_production_source_contains_no_trade_api_names() -> None:
     prohibited = ("place_order", "modify_order", "cancel_order", "tradebook", "holdings", "funds")
 
     assert not any(word in source for word in prohibited)
+
+
+def test_examples_use_totp_without_token_files() -> None:
+    example = Path(".env.example").read_text(encoding="utf-8")
+    readme = Path("README.md").read_text(encoding="utf-8")
+
+    assert "FYERS_TOTP_SECRET=your_base32_totp_secret" in example
+    assert "FYERS_REFRESH_TOKEN=" not in example
+    assert "FYERS_TOTP_SECRET" in readme
+    assert "access_token.log" not in readme
