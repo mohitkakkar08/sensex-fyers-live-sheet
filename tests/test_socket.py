@@ -1,8 +1,8 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from typing import Callable, Mapping
 
-from sensex_chain.socket import FyersDataFeed
+from sensex_chain.socket import DataFeedError, FyersDataFeed
 
 
 class FakeDataSocket:
@@ -41,3 +41,15 @@ def test_socket_subscribes_only_in_symbol_update_mode() -> None:
     assert created[0].connect_called is True
     feed.stop()
     assert created[0].close_called is True
+
+
+def test_socket_start_failure_has_a_safe_diagnostic_code() -> None:
+    def failing_factory(**kwargs: object):
+        raise RuntimeError("access token must not leak")
+
+    feed = FyersDataFeed("app:token", socket_factory=failing_factory)
+
+    with __import__("pytest").raises(DataFeedError) as error:
+        feed.start(["BSE:SENSEX-INDEX"], lambda tick: None)
+
+    assert str(error.value) == "SOCKET_START_FAILED"

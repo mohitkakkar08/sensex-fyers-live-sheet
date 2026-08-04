@@ -1,4 +1,4 @@
-"""Thread-safe latest-value cache and complete option-chain snapshots."""
+﻿"""Thread-safe latest-value cache and complete option-chain snapshots."""
 
 from __future__ import annotations
 
@@ -40,6 +40,13 @@ class ChainSnapshot:
     rows: tuple[ChainRow, ...]
 
 
+@dataclass(frozen=True)
+class MarketDataCoverage:
+    tick_count: int
+    option_tick_count: int
+    has_underlying_tick: bool
+
+
 class LatestMarketCache:
     """Stores the latest valid payload per subscribed symbol."""
 
@@ -53,6 +60,16 @@ class LatestMarketCache:
             return
         with self._lock:
             self._ticks[tick.symbol] = tick
+
+    def coverage(self, chain: CurrentExpiryChain) -> MarketDataCoverage:
+        with self._lock:
+            symbols = set(self._ticks)
+        option_symbols = {contract.symbol for contract in chain.contracts}
+        return MarketDataCoverage(
+            tick_count=len(symbols),
+            option_tick_count=len(symbols & option_symbols),
+            has_underlying_tick=INDEX_SYMBOL in symbols,
+        )
 
     def snapshot(self, chain: CurrentExpiryChain, now: datetime) -> ChainSnapshot:
         with self._lock:

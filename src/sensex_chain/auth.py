@@ -23,7 +23,7 @@ VALIDATE_AUTH_CODE_URL = "https://api-t1.fyers.in/api/v3/validate-authcode"
 
 
 class AuthenticationError(RuntimeError):
-    """Raised when FYERS cannot create an access token."""
+    """Raised with a safe FYERS authentication stage code."""
 
 
 class HttpResponse(Protocol):
@@ -33,14 +33,7 @@ class HttpResponse(Protocol):
 
 
 class HttpClient(Protocol):
-    def post(
-        self,
-        url: str,
-        *,
-        json: dict[str, object],
-        timeout: int,
-        headers: dict[str, str] | None = None,
-    ) -> HttpResponse: ...
+    def post(self, url: str, *, json: dict[str, object], timeout: int, headers: dict[str, str] | None = None) -> HttpResponse: ...
 
 
 class TokenProvider(Protocol):
@@ -57,7 +50,7 @@ def totp_code(secret: str, unix_time: int) -> str:
         offset = digest[-1] & 0x0F
         value = (struct.unpack(">I", digest[offset : offset + 4])[0] & 0x7FFFFFFF) % 1_000_000
     except (ValueError, binascii.Error, struct.error):
-        raise AuthenticationError("FYERS automated login failed") from None
+        raise AuthenticationError("AUTH_TOTP_GENERATE_FAILED") from None
     return f"{value:06d}"
 
 
@@ -71,136 +64,73 @@ class FyersTokenProvider:
     def access_token(self) -> str:
         refresh_token = self._config.fyers_refresh_token
         if not refresh_token:
-            raise AuthenticationError("FYERS refresh-token exchange failed")
-        app_id_hash = hashlib.sha256(
-            f"{self._config.fyers_client_id}:{self._config.fyers_secret_key}".encode("utf-8")
-        ).hexdigest()
-        response = self._http.post(
-            REFRESH_URL,
-            json={
-                "grant_type": "refresh_token",
-                "appIdHash": app_id_hash,
-                "refresh_token": refresh_token,
-                "pin": self._config.fyers_pin,
-            },
-            timeout=20,
-        )
-        body = _response_body(response)
+            raise AuthenticationError("AUTH_REFRESH_TOKEN_UNAVAILABLE")
+        app_id_hash = hashlib.sha256(f"{self._config.fyers_client_id}:{self._config.fyers_secret_key}".encode("utf-8")).hexdigest()
+        response = self._http.post(REFRESH_URL, json={"grant_type": "refresh_token", "appIdHash": app_id_hash, "refresh_token": refresh_token, "pin": self._config.fyers_pin}, timeout=20)
+        body = _response_body(response, "AUTH_REFRESH_TOKEN_EXCHANGE_FAILED")
         token = body.get("access_token")
         if response.status_code != 200 or body.get("s") != "ok" or not isinstance(token, str):
-            raise AuthenticationError("FYERS refresh-token exchange failed")
+            raise AuthenticationError("AUTH_REFRESH_TOKEN_EXCHANGE_FAILED")
         return token
 
 
 class AutomatedFyersTokenProvider:
     """Creates a worker token from the configured FYERS External TOTP."""
 
-    def __init__(
-        self,
-        config: RuntimeConfig,
-        http: HttpClient,
-        unix_time: Callable[[], int],
-    ) -> None:
+    def __init__(self, config: RuntimeConfig, http: HttpClient, unix_time: Callable[[], int]) -> None:
         self._config = config
         self._http = http
         self._unix_time = unix_time
 
     def access_token(self) -> str:
         try:
-            otp_request = self._request_key(
-                SEND_LOGIN_OTP_URL,
-                {
-                    "fy_id": _base64_ascii(self._config.fyers_user_id),
-                    "app_id": "2",
-                },
-            )
-            pin_request = self._request_key(
-                VERIFY_OTP_URL,
-                {
-                    "request_key": otp_request,
-                    "otp": totp_code(self._config.fyers_totp_secret, self._unix_time()),
-                },
-            )
+            otp_request = self._request_key(SEND_LOGIN_OTP_URL, {"fy_id": _base64_ascii(self._config.fyers_user_id), "app_id": "2"}, "AUTH_LOGIN_OTP_REQUEST_FAILED")
+            pin_request = self._request_key(VERIFY_OTP_URL, {"request_key": otp_request, "otp": totp_code(self._config.fyers_totp_secret, self._unix_time())}, "AUTH_TOTP_VERIFY_FAILED")
             pin_token = self._pin_token(pin_request)
             auth_code = self._authorization_code(pin_token)
             return self._validate_auth_code(auth_code)
         except AuthenticationError:
             raise
         except (ValueError, UnicodeError, KeyError, TypeError):
-            raise AuthenticationError("FYERS automated login failed") from None
+            raise AuthenticationError("AUTH_AUTOMATED_LOGIN_INVALID_RESPONSE") from None
 
-    def _request_key(self, url: str, payload: dict[str, object]) -> str:
+    def _request_key(self, url: str, payload: dict[str, object], error_code: str) -> str:
         response = self._http.post(url, json=payload, timeout=20)
-        body = _response_body(response)
+        body = _response_body(response, error_code)
         request_key = body.get("request_key")
         if response.status_code != 200 or not isinstance(request_key, str) or not request_key:
-            raise AuthenticationError("FYERS automated login failed")
+            raise AuthenticationError(error_code)
         return request_key
 
     def _pin_token(self, request_key: str) -> str:
-        response = self._http.post(
-            VERIFY_PIN_URL,
-            json={
-                "request_key": request_key,
-                "identity_type": "pin",
-                "identifier": _base64_ascii(self._config.fyers_pin),
-            },
-            timeout=20,
-        )
-        body = _response_body(response)
+        error_code = "AUTH_PIN_VERIFY_FAILED"
+        response = self._http.post(VERIFY_PIN_URL, json={"request_key": request_key, "identity_type": "pin", "identifier": _base64_ascii(self._config.fyers_pin)}, timeout=20)
+        body = _response_body(response, error_code)
         data = body.get("data")
         token = data.get("access_token") if isinstance(data, dict) else None
         if response.status_code != 200 or not isinstance(token, str) or not token:
-            raise AuthenticationError("FYERS automated login failed")
+            raise AuthenticationError(error_code)
         return token
 
     def _authorization_code(self, pin_token: str) -> str:
+        error_code = "AUTH_AUTHORIZATION_CODE_FAILED"
         app_id, app_type = _app_parts(self._config.fyers_client_id)
-        response = self._http.post(
-            TOKEN_URL,
-            json={
-                "fyers_id": self._config.fyers_user_id,
-                "app_id": app_id,
-                "redirect_uri": self._config.fyers_redirect_uri,
-                "appType": app_type,
-                "code_challenge": "",
-                "state": "",
-                "scope": "",
-                "nonce": "",
-                "response_type": "code",
-                "create_cookie": True,
-            },
-            headers={"Authorization": f"Bearer {pin_token}"},
-            timeout=20,
-        )
-        body = _response_body(response)
+        response = self._http.post(TOKEN_URL, json={"fyers_id": self._config.fyers_user_id, "app_id": app_id, "redirect_uri": self._config.fyers_redirect_uri, "appType": app_type, "code_challenge": "", "state": "", "scope": "", "nonce": "", "response_type": "code", "create_cookie": True}, headers={"Authorization": f"Bearer {pin_token}"}, timeout=20)
+        body = _response_body(response, error_code)
         redirect_url = body.get("Url")
-        auth_codes = (
-            parse_qs(urlparse(redirect_url).query).get("auth_code", [])
-            if isinstance(redirect_url, str)
-            else []
-        )
+        auth_codes = parse_qs(urlparse(redirect_url).query).get("auth_code", []) if isinstance(redirect_url, str) else []
         if response.status_code != 308 or not auth_codes or not auth_codes[0]:
-            raise AuthenticationError("FYERS automated login failed")
+            raise AuthenticationError(error_code)
         return auth_codes[0]
 
     def _validate_auth_code(self, auth_code: str) -> str:
-        app_id_hash = hashlib.sha256(
-            f"{self._config.fyers_client_id}:{self._config.fyers_secret_key}".encode("utf-8")
-        ).hexdigest()
-        response = self._http.post(
-            VALIDATE_AUTH_CODE_URL,
-            json={
-                "grant_type": "authorization_code",
-                "appIdHash": app_id_hash,
-                "code": auth_code,
-            },
-            timeout=20,
-        )
-        body = _response_body(response)
+        error_code = "AUTH_ACCESS_TOKEN_EXCHANGE_FAILED"
+        app_id_hash = hashlib.sha256(f"{self._config.fyers_client_id}:{self._config.fyers_secret_key}".encode("utf-8")).hexdigest()
+        response = self._http.post(VALIDATE_AUTH_CODE_URL, json={"grant_type": "authorization_code", "appIdHash": app_id_hash, "code": auth_code}, timeout=20)
+        body = _response_body(response, error_code)
         token = body.get("access_token")
         if response.status_code != 200 or body.get("s") != "ok" or not isinstance(token, str):
-            raise AuthenticationError("FYERS automated login failed")
+            raise AuthenticationError(error_code)
         return token
 
 
@@ -220,13 +150,13 @@ class FallbackTokenProvider:
             return self._fallback.access_token()
 
 
-def _response_body(response: HttpResponse) -> dict[str, object]:
+def _response_body(response: HttpResponse, error_code: str) -> dict[str, object]:
     try:
         body = response.json()
     except (TypeError, ValueError):
-        raise AuthenticationError("FYERS automated login failed") from None
+        raise AuthenticationError(error_code) from None
     if not isinstance(body, dict):
-        raise AuthenticationError("FYERS automated login failed")
+        raise AuthenticationError(error_code)
     return body
 
 
@@ -237,5 +167,5 @@ def _base64_ascii(value: str) -> str:
 def _app_parts(client_id: str) -> tuple[str, str]:
     app_id, separator, app_type = client_id.rpartition("-")
     if not separator or not app_id or not app_type:
-        raise AuthenticationError("FYERS automated login failed")
+        raise AuthenticationError("AUTH_APP_ID_INVALID")
     return app_id, app_type

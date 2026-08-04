@@ -141,3 +141,12 @@ def test_fallback_provider_uses_refresh_only_after_automated_failure() -> None:
     assert FallbackTokenProvider(FailingProvider(), WorkingProvider()).access_token() == "fallback-token"
 
 
+
+
+def test_automated_login_identifies_the_failed_stage_without_response_details() -> None:
+    http = FakeHttp([FakeResponse(401, {"message": "token must not leak"})])
+
+    with pytest.raises(AuthenticationError) as error:
+        AutomatedFyersTokenProvider(config(), http, lambda: 59).access_token()
+
+    assert str(error.value) == "AUTH_LOGIN_OTP_REQUEST_FAILED"

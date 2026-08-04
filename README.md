@@ -24,6 +24,11 @@ Each scheduled job creates a fresh FYERS session automatically. It does not save
 
 The workflow uses UTC schedules `45 3 * * 1-5` (09:15 IST) and `45 6 * * 1-5` (12:15 IST). The Python worker stops at 12:15 and 15:30 IST. GitHub scheduled workflows can be delayed, so monitor the Actions history and the `Status` row in the `SENSEX` tab.
 
+## SENSEX tab layout and diagnostics
+
+The worker writes the option chain in columns **A:AL**, mirroring the supplied CE / Strike / PE layout: CE market data, the central strike, then PE market data, timestamp, and both VWAP fields. FYERS socket fields populate OHLC, LTP, LTP change, OI, OI change, volume, and VWAP. The `IV` and Greek columns (`Delta`, `Gamma`, `Vega`, `Theta`, `Rho`) are deliberately blank: they require a validated pricing/volatility model and are not invented from the FYERS market-data socket.
+
+Row 3 reports `Status`, a safe `Diagnostic` code, total tick count, and option tick count. Useful outcomes are `LIVE`, `PARTIAL_LIVE`, and `WAITING_FOR_TICKS`. GitHub Actions also logs the configuration, instrument-catalog, Google-Sheets, and FYERS-authentication stages. These diagnostics never print credentials, PINs, TOTP values, authorization codes, or access tokens.
 ## Local verification
 
 ```powershell
