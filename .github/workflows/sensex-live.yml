@@ -3,7 +3,9 @@ name: SENSEX live option chain
 on:
   schedule:
     - cron: "45 3 * * 1-5"
+    - cron: "50 3 * * 1-5"
     - cron: "45 6 * * 1-5"
+    - cron: "50 6 * * 1-5"
   workflow_dispatch:
     inputs:
       segment:
@@ -26,8 +28,10 @@ on:
 permissions:
   contents: read
 
+# The 09:20/12:20 watchdogs share the primary session lock. A healthy primary
+# owns the lock; a missed or early-failed primary is automatically replaced.
 concurrency:
-  group: sensex-live-${{ github.event_name == 'workflow_dispatch' && inputs.segment || github.event.schedule == '45 3 * * 1-5' && 'morning' || 'afternoon' }}
+  group: sensex-live-${{ github.event_name == 'workflow_dispatch' && inputs.segment || (github.event.schedule == '45 3 * * 1-5' || github.event.schedule == '50 3 * * 1-5') && 'morning' || 'afternoon' }}
   cancel-in-progress: false
 
 jobs:
@@ -47,7 +51,7 @@ jobs:
           if [ "$DEBUG_TICKS" = "true" ]; then EXTRA_ARGS="$EXTRA_ARGS --debug-ticks"; fi
           python -m sensex_chain --segment "$SEGMENT" $EXTRA_ARGS
         env:
-          SEGMENT: ${{ github.event_name == 'workflow_dispatch' && inputs.segment || github.event.schedule == '45 3 * * 1-5' && 'morning' || 'afternoon' }}
+          SEGMENT: ${{ github.event_name == 'workflow_dispatch' && inputs.segment || (github.event.schedule == '45 3 * * 1-5' || github.event.schedule == '50 3 * * 1-5') && 'morning' || 'afternoon' }}
           RUN_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.run_mode || 'live' }}
           DEBUG_TICKS: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_ticks || 'false' }}
           FYERS_CLIENT_ID: ${{ secrets.FYERS_CLIENT_ID }}

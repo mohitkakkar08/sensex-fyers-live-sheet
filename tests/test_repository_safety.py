@@ -8,11 +8,14 @@ def test_workflow_has_required_schedules_and_automated_login_secret_references()
 
     assert 'cron: "45 3 * * 1-5"' in workflow
     assert 'cron: "45 6 * * 1-5"' in workflow
+    assert 'cron: "50 3 * * 1-5"' in workflow
+    assert 'cron: "50 6 * * 1-5"' in workflow
     for name in ("FYERS_USER_ID", "FYERS_TOTP_SECRET", "FYERS_REDIRECT_URI"):
         assert f"{name}: ${{{{ secrets.{name} }}}}" in workflow
     assert "FYERS_REFRESH_TOKEN: ${{ secrets.FYERS_REFRESH_TOKEN }}" not in workflow
     assert "GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}" in workflow
-    assert "group: sensex-live-${{ github.event_name == 'workflow_dispatch' && inputs.segment || github.event.schedule == '45 3 * * 1-5' && 'morning' || 'afternoon' }}" in workflow
+    assert "github.event.schedule == '50 3 * * 1-5'" in workflow
+    assert "group: sensex-live-${{ github.event_name == 'workflow_dispatch' && inputs.segment || (github.event.schedule == '45 3 * * 1-5' || github.event.schedule == '50 3 * * 1-5') && 'morning' || 'afternoon' }}" in workflow
 
 
 def test_production_source_contains_no_trade_api_names() -> None:

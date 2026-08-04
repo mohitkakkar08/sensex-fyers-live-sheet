@@ -22,7 +22,7 @@ Each scheduled job creates a fresh FYERS session automatically. It does not save
 
 ## Schedule
 
-The workflow uses UTC schedules `45 3 * * 1-5` (09:15 IST) and `45 6 * * 1-5` (12:15 IST). The Python worker stops at 12:15 and 15:30 IST. GitHub scheduled workflows can be delayed, so monitor the Actions history and the `Status` row in the `SENSEX` tab. Python dependencies are cached between successful GitHub runs to reduce startup time. Each live cycle is deadline-scheduled, so normal API and Sheets latency does not add to the 10-second refresh interval.
+The workflow has primary UTC schedules `45 3 * * 1-5` (09:15 IST) and `45 6 * * 1-5` (12:15 IST), plus automatic watchdog schedules at `50 3 * * 1-5` (09:20 IST) and `50 6 * * 1-5` (12:20 IST). Each watchdog shares its session lock with its primary run: it starts automatically if that session did not start or failed early, and cannot create a duplicate live Sheet writer when the primary is healthy. The Python worker stops at 12:15 and 15:30 IST. GitHub scheduled workflows can be delayed, so monitor the Actions history and the `Status` row in the `SENSEX` tab. Python dependencies are cached between successful GitHub runs to reduce startup time. Each live cycle is deadline-scheduled, so normal API and Sheets latency does not add to the 10-second refresh interval.
 
 ## SENSEX tab layout and diagnostics
 
