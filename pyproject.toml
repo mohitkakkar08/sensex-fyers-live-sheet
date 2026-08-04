@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sensex-fyers-live-sheet"
+version = "0.1.0"
+description = "Data-only SENSEX option chain updater for Google Sheets"
+requires-python = ">=3.12"
+dependencies = [
+  "fyers-apiv3==3.1.14",
+  "google-api-python-client>=2.0,<3.0",
+  "google-auth>=2.0,<3.0",
+  "requests>=2.31,<3.0",
+]
+
+[project.scripts]
+sensex-chain = "sensex_chain.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

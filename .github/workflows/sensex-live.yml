@@ -1,0 +1,40 @@
+name: SENSEX live option chain
+
+on:
+  schedule:
+    - cron: "45 3 * * 1-5"
+    - cron: "45 6 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      segment:
+        description: Market session to run
+        type: choice
+        required: true
+        options: [morning, afternoon]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sensex-live-${{ github.event.schedule || inputs.segment }}
+  cancel-in-progress: false
+
+jobs:
+  stream:
+    runs-on: ubuntu-latest
+    timeout-minutes: 210
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install .
+      - run: python -m sensex_chain --segment "$SEGMENT"
+        env:
+          SEGMENT: ${{ github.event_name == 'workflow_dispatch' && inputs.segment || github.event.schedule == '45 3 * * 1-5' && 'morning' || 'afternoon' }}
+          FYERS_CLIENT_ID: ${{ secrets.FYERS_CLIENT_ID }}
+          FYERS_SECRET_KEY: ${{ secrets.FYERS_SECRET_KEY }}
+          FYERS_REFRESH_TOKEN: ${{ secrets.FYERS_REFRESH_TOKEN }}
+          FYERS_PIN: ${{ secrets.FYERS_PIN }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
