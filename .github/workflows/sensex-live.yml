@@ -1,4 +1,4 @@
-﻿name: SENSEX live option chain
+name: SENSEX live option chain
 
 on:
   schedule:
@@ -27,7 +27,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: sensex-live-${{ github.event.schedule || inputs.segment }}
+  group: sensex-live-${{ github.event_name == 'workflow_dispatch' && inputs.segment || github.event.schedule == '45 3 * * 1-5' && 'morning' || 'afternoon' }}
   cancel-in-progress: false
 
 jobs:

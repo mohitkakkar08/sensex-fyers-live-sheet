@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from pathlib import Path
 
@@ -12,6 +12,7 @@ def test_workflow_has_required_schedules_and_automated_login_secret_references()
         assert f"{name}: ${{{{ secrets.{name} }}}}" in workflow
     assert "FYERS_REFRESH_TOKEN: ${{ secrets.FYERS_REFRESH_TOKEN }}" not in workflow
     assert "GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}" in workflow
+    assert "group: sensex-live-${{ github.event_name == 'workflow_dispatch' && inputs.segment || github.event.schedule == '45 3 * * 1-5' && 'morning' || 'afternoon' }}" in workflow
 
 
 def test_production_source_contains_no_trade_api_names() -> None:

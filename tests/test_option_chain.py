@@ -67,3 +67,27 @@ def test_fyers_option_chain_enricher_requests_current_chain_with_greeks_and_upda
     row = cache.snapshot(chain(), datetime(2026, 8, 4, 9, 15, tzinfo=KOLKATA)).rows[0]
     assert row.call.oi == 400
     assert row.call.iv == 16.2
+
+
+def test_fyers_option_chain_enricher_backs_off_without_repeating_a_429_request() -> None:
+    from sensex_chain.cache import LatestMarketCache
+    from sensex_chain.option_chain import FyersOptionChainEnricher
+    from sensex_chain.rate_limit import FyersRequestGate
+    from test_cache import chain
+
+    class RateLimitedModel:
+        calls = 0
+
+        def optionchain(self, *, data):
+            self.calls += 1
+            return {"s": "error", "code": 429, "message": "request limit reached"}
+
+    now = [0.0]
+    model = RateLimitedModel()
+    enricher = FyersOptionChainEnricher("client-id", "token", model_factory=lambda client_id, token: model, request_gate=FyersRequestGate(monotonic=lambda: now[0]))
+
+    enricher.refresh(chain(), LatestMarketCache())
+    enricher.refresh(chain(), LatestMarketCache())
+
+    assert model.calls == 1
+    assert enricher.diagnostic_code == "RATE_LIMIT_BACKOFF_30S"

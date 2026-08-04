@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
+from typing import Any
+
 from .cache import LatestMarketCache
 from .instruments import CurrentExpiryChain, INDEX_SYMBOL
-from typing import Any
+from .rate_limit import FyersRequestGate
 
 
 class OptionChainError(RuntimeError):
@@ -22,10 +24,15 @@ def extract_option_ticks(response: Mapping[str, Any], requested_symbols: set[str
             continue
         values: dict[str, object] = {"symbol": symbol}
         for output, aliases in {
-            "ltp": ("ltp", "lp"), "oi": ("oi", "open_interest", "OI"),
+            "ltp": ("ltp", "lp"),
+            "oi": ("oi", "open_interest", "OI"),
             "oi_change": ("oich", "oi_change", "change_in_oi", "OIch"),
-            "iv": ("iv", "implied_volatility"), "delta": ("delta",), "gamma": ("gamma",),
-            "theta": ("theta",), "vega": ("vega",), "rho": ("rho",),
+            "iv": ("iv", "implied_volatility"),
+            "delta": ("delta",),
+            "gamma": ("gamma",),
+            "theta": ("theta",),
+            "vega": ("vega",),
+            "rho": ("rho",),
         }.items():
             value = _lookup(record, aliases)
             if value is not None:
@@ -58,26 +65,65 @@ def _lookup(record: Mapping[str, Any], aliases: tuple[str, ...]) -> object | Non
         if value not in (None, ""):
             return value
     return None
+
+
 class FyersOptionChainEnricher:
     """One bounded FYERS option-chain request per sheet refresh."""
 
-    def __init__(self, client_id: str, token: str, model_factory: Callable[[str, str], object] | None = None) -> None:
+    def __init__(self, client_id: str, token: str, model_factory: Callable[[str, str], object] | None = None, request_gate: FyersRequestGate | None = None) -> None:
         self._client_id = client_id
         self._token = token
         self._model_factory = model_factory or _sdk_option_chain_model
+        self._model: object | None = None
+        self._request_gate = request_gate or FyersRequestGate()
         self.diagnostic_code = "OPTION_CHAIN_NOT_STARTED"
 
     def refresh(self, chain: CurrentExpiryChain, cache: LatestMarketCache) -> None:
+        permission = self._request_gate.acquire()
+        if not permission.allowed:
+            self.diagnostic_code = f"RATE_LIMIT_BACKOFF_{permission.retry_in_seconds}S"
+            return
         try:
-            response = self._model_factory(self._client_id, self._token).optionchain(data={"symbol": INDEX_SYMBOL, "strikecount": 0, "timestamp": "", "greeks": "1"})
+            response = self._client().optionchain(data={"symbol": INDEX_SYMBOL, "strikecount": 0, "timestamp": "", "greeks": "1"})
+            if _is_rate_limited(response):
+                delay = self._request_gate.on_rate_limit(_retry_after_seconds(response))
+                self.diagnostic_code = f"RATE_LIMIT_BACKOFF_{delay}S"
+                return
             ticks = extract_option_ticks(response, {contract.symbol for contract in chain.contracts})
             for tick in ticks.values():
                 cache.upsert(tick)
+            self._request_gate.on_success()
             self.diagnostic_code = "OPTION_CHAIN_OK"
         except OptionChainError as exc:
             self.diagnostic_code = str(exc)
         except Exception:
             self.diagnostic_code = "OPTION_CHAIN_REQUEST_FAILED"
+
+    def _client(self) -> object:
+        if self._model is None:
+            self._model = self._model_factory(self._client_id, self._token)
+        return self._model
+
+
+def _is_rate_limited(response: object) -> bool:
+    if not isinstance(response, Mapping):
+        return False
+    code = str(response.get("code", ""))
+    message = str(response.get("message", "")).lower()
+    return code == "429" or "rate limit" in message or "request limit" in message
+
+
+def _retry_after_seconds(response: object) -> float | None:
+    if not isinstance(response, Mapping):
+        return None
+    for name in ("retry_after", "retryAfter"):
+        try:
+            value = float(response[name])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if value > 0:
+            return value
+    return None
 
 
 def _sdk_option_chain_model(client_id: str, token: str) -> object:
