@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
@@ -102,6 +102,30 @@ def test_chain_layout_places_live_fields_in_their_ce_and_pe_columns() -> None:
     assert row[18] == ""  # PE LTP (column S)
     assert row[23] == ""  # PE OI (column X)
 
+
+def test_chain_layout_writes_oi_and_greeks_in_their_named_columns() -> None:
+    service = FakeSheetsService()
+    gateway = GoogleSheetGateway(service, "sheet-id")
+    rich_snapshot = ChainSnapshot(
+        expiry=date(2026, 8, 6),
+        updated_at=datetime(2026, 8, 4, 9, 15, tzinfo=KOLKATA),
+        underlying=MarketTick("BSE:SENSEX-INDEX", ltp=80050.0),
+        india_vix=MarketTick("NSE:INDIAVIX-INDEX", ltp=14.5),
+        rows=(
+            ChainRow(
+                strike=Decimal("80000"),
+                call=MarketTick("BSE:SENSEX26AUG80000CE", oi=400.0, oi_change=25.0, iv=16.2, delta=0.51, gamma=0.001, theta=-12.3, vega=8.7, rho=1.2),
+                put=MarketTick("BSE:SENSEX26AUG80000PE", oi=450.0, oi_change=-10.0, iv=17.1, delta=-0.49, gamma=0.002, theta=-11.8, vega=8.2, rho=-1.1),
+            ),
+        ),
+    )
+
+    gateway.write_snapshot(rich_snapshot, WorkerStatus.connected(rich_snapshot.updated_at))
+
+    row = service.last_body["data"][1]["values"][1]
+    assert row[4:10] == [1.2, -12.3, 8.7, 0.001, 0.51, 16.2]
+    assert row[10:12] == [400.0, 25.0]
+    assert row[22:31] == [-10.0, 450.0, -2.1739, 17.1, -0.49, 0.002, 8.2, -11.8, -1.1]
 
 def test_missing_market_fields_are_written_as_blank_cells() -> None:
     service = FakeSheetsService()

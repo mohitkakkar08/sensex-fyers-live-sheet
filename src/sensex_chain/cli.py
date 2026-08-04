@@ -1,4 +1,4 @@
-﻿"""Command-line entry point for a scheduled data-only worker."""
+"""Command-line entry point for a scheduled data-only worker."""
 from __future__ import annotations
 import argparse, os, time
 from collections.abc import Mapping
@@ -10,6 +10,7 @@ from .config import ConfigurationError, RuntimeConfig
 from .instruments import FyersInstrumentCatalog, InstrumentDiscoveryError
 from .sheet import GoogleSheetGateway, SheetGatewayError
 from .socket import DataFeedError, FyersDataFeed
+from .option_chain import FyersOptionChainEnricher
 from .timebox import KOLKATA, SessionSegment
 from .worker import LiveChainWorker
 class SystemClock:
@@ -35,7 +36,7 @@ def main(argv:list[str]|None=None)->int:
  try:
   config=RuntimeConfig.from_environ(os.environ);print('Diagnostic: CONFIGURATION_READY');http=requests.Session();catalog=FyersInstrumentCatalog.download(http);print('Diagnostic: INSTRUMENT_CATALOG_READY');gateway=GoogleSheetGateway.from_service_account_json(config.google_service_account_json,config.sheet_id);print('Diagnostic: GOOGLE_SHEETS_GATEWAY_READY')
   automated=AutomatedFyersTokenProvider(config,http,lambda:int(time.time()));fallback=FyersTokenProvider(config,http) if config.fyers_refresh_token else None; cache=DebugMarketCache() if args.debug_ticks else LatestMarketCache()
-  worker=LiveChainWorker(catalog,FallbackTokenProvider(automated,fallback),lambda token:FyersDataFeed(f'{config.fyers_client_id}:{token}'),cache,gateway,SystemClock(),config.flush_seconds)
+  worker=LiveChainWorker(catalog,FallbackTokenProvider(automated,fallback),lambda token:FyersDataFeed(f'{config.fyers_client_id}:{token}'),cache,gateway,SystemClock(),config.flush_seconds,option_chain_factory=lambda token:FyersOptionChainEnricher(config.fyers_client_id,token))
   print('Diagnostic: FYERS_AUTHENTICATION_STARTING');result=worker.run(SessionSegment.parse(args.segment),max_cycles=1 if args.once else None);print('Diagnostic: WORKER_STOPPED_CLEANLY');return result
  except ConfigurationError as exc:print(f'Diagnostic: CONFIGURATION_ERROR; {exc}');return 2
  except (AuthenticationError,InstrumentDiscoveryError,DataFeedError,SheetGatewayError) as exc:print(f'Diagnostic: {exc}');return 3

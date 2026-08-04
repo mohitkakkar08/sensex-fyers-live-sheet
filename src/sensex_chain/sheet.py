@@ -1,4 +1,4 @@
-﻿"""Google Sheets output gateway for SENSEX chain snapshots."""
+"""Google Sheets output gateway for SENSEX chain snapshots."""
 from __future__ import annotations
 import json
 from dataclasses import dataclass
@@ -42,7 +42,7 @@ def _chain_values(snapshot:ChainSnapshot)->list[list[object]]:
  values=[list(CHAIN_HEADERS)]
  for row in snapshot.rows:
   c,p=row.call,row.put
-  values.append([_cell(c.prev_close),_cell(c.low),_cell(c.high),_cell(c.open),"","","","","","",_cell(c.oi),_cell(c.oi_change),_oi_change_percent(c),_cell(c.volume),_change(c),_change_percent(c),_cell(c.ltp),float(row.strike),_cell(p.ltp),_change(p),_change_percent(p),_cell(p.volume),_cell(p.oi_change),_cell(p.oi),_oi_change_percent(p),"","","","","","",_cell(p.open),_cell(p.high),_cell(p.low),_cell(p.prev_close),snapshot.updated_at.isoformat(),_cell(c.vwap),_cell(p.vwap)])
+  values.append([_cell(c.prev_close),_cell(c.low),_cell(c.high),_cell(c.open),_cell(c.rho),_cell(c.theta),_cell(c.vega),_cell(c.gamma),_cell(c.delta),_cell(c.iv),_cell(c.oi),_cell(c.oi_change),_oi_change_percent(c),_cell(c.volume),_change(c),_change_percent(c),_cell(c.ltp),float(row.strike),_cell(p.ltp),_change(p),_change_percent(p),_cell(p.volume),_cell(p.oi_change),_cell(p.oi),_oi_change_percent(p),_cell(p.iv),_cell(p.delta),_cell(p.gamma),_cell(p.vega),_cell(p.theta),_cell(p.rho),_cell(p.open),_cell(p.high),_cell(p.low),_cell(p.prev_close),snapshot.updated_at.isoformat(),_cell(c.vwap),_cell(p.vwap)])
  return values
 def _pad(values:list[object])->list[object]:return values+[""]*(WIDTH-len(values))
 def _cell(value:float|None)->float|str:return "" if value is None else value

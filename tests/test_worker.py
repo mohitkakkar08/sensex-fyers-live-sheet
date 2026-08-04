@@ -121,3 +121,27 @@ def test_worker_uses_one_socket_for_a_large_current_expiry_chain() -> None:
     assert worker.run(SessionSegment.MORNING, max_cycles=1) == 0
     assert len(feeds) == 1
     assert len(feeds[0].symbols) == 204
+
+class Enricher:
+    diagnostic_code = "OPTION_CHAIN_OK"
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def refresh(self, chain, cache) -> None:
+        self.calls += 1
+        cache.upsert({"symbol": "BSE:SENSEX26AUG80000CE", "oi": 400, "oi_change": 25, "iv": 16.2, "delta": 0.51})
+
+
+def test_worker_enriches_option_chain_fields_before_writing_snapshot() -> None:
+    feed = Feed()
+    gateway = Gateway()
+    cache = LatestMarketCache()
+    enricher = Enricher()
+    worker = LiveChainWorker(Catalog(), TokenProvider(), lambda token: feed, cache, gateway, Clock(), 10, option_chain_factory=lambda token: enricher)
+
+    assert worker.run(SessionSegment.MORNING, max_cycles=1) == 0
+    assert enricher.calls == 1
+    row = cache.snapshot(Catalog().current_sensex_chain(date(2026, 8, 4)), Clock().now()).rows[0]
+    assert row.call.oi == 400
+    assert row.call.iv == 16.2
