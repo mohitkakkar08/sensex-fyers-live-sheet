@@ -12,6 +12,7 @@ from .timebox import KOLKATA
 SHEET_NAME = "SENSEX"
 WIDTH = 38
 SUMMARY_HEADERS = ["Instrument", "Prev Close", "Open", "High", "Low", "LTP", "LTP Change", "LTP Change %"]
+FUTURE_HEADERS = ["Instrument", "Prev Close", "Open", "High", "Low", "LTP", "LTP Change", "", "LTP Change %", "", "Volume", "OI", "OI Change", "OI Change %", "VWAP"]
 CHAIN_HEADERS = ["CE Prev Close", "CE Low", "CE High", "CE Open", "CE Rho", "CE Theta", "CE Vega", "CE Gamma", "CE Delta", "CE IV", "CE OI", "CE OI Change", "CE OI Change %", "CE Volume", "CE LTP Change", "CE LTP Change %", "CE LTP", "Strike", "PE LTP", "PE LTP Change", "PE LTP Change %", "PE Volume", "PE OI Change", "PE OI", "PE OI Change %", "PE IV", "PE Delta", "PE Gamma", "PE Vega", "PE Theta", "PE Rho", "PE Open", "PE High", "PE Low", "PE Prev Close", "Last Updated At", "CE VWAP", "PE VWAP"]
 
 
@@ -109,10 +110,19 @@ def _summary_values(snapshot: ChainSnapshot, status: WorkerStatus) -> list[list[
     i = snapshot.underlying
     v = snapshot.india_vix
     return [
-        _pad(SUMMARY_HEADERS),
-        _pad([i.symbol, _cell(i.prev_close), _cell(i.open), _cell(i.high), _cell(i.low), _cell(i.ltp), _change(i), _change_percent(i)]),
+        _pad(SUMMARY_HEADERS + ["", "", ""] + FUTURE_HEADERS),
+        _pad([i.symbol, _cell(i.prev_close), _cell(i.open), _cell(i.high), _cell(i.low), _cell(i.ltp), _change(i), _change_percent(i)] + ["", "", ""] + _future_values(snapshot.future)),
         _pad([v.symbol, _cell(v.prev_close), _cell(v.open), _cell(v.high), _cell(v.low), _cell(v.ltp), _change(v), _change_percent(v)]),
         _pad(["Status", status.state, "Diagnostic", status.diagnostic_code, "Ticks", status.tick_count, "Option Ticks", status.option_tick_count, "Expiry", snapshot.expiry.isoformat(), "Updated", _timestamp(status.updated_at)]),
+    ]
+
+
+def _future_values(future: MarketTick | None) -> list[object]:
+    if future is None:
+        return [""] * len(FUTURE_HEADERS)
+    return [
+        future.symbol, _cell(future.prev_close), _cell(future.open), _cell(future.high), _cell(future.low), _cell(future.ltp),
+        _change(future), "", _change_percent(future), "", _cell(future.volume), _cell(future.oi), _cell(future.oi_change), _oi_change_percent(future), _cell(future.vwap),
     ]
 
 

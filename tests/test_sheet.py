@@ -163,6 +163,26 @@ def test_summary_includes_live_india_vix() -> None:
     assert summary_rows[2][5] == 14.5
 
 
+
+def test_summary_writes_sensex_future_fields_in_the_requested_l_to_z_block() -> None:
+    service = FakeSheetsService()
+    gateway = GoogleSheetGateway(service, "sheet-id")
+    future_snapshot = ChainSnapshot(
+        expiry=date(2026, 8, 6),
+        updated_at=datetime(2026, 8, 5, 9, 15, tzinfo=KOLKATA),
+        underlying=MarketTick("BSE:SENSEX-INDEX", ltp=78400),
+        india_vix=MarketTick("NSE:INDIAVIX-INDEX", ltp=12.1),
+        rows=(),
+        future=MarketTick("BSE:SENSEX26AUGFUT", prev_close=78300, open=78350, high=78525, low=78200, ltp=78480, volume=42000, oi=125000, oi_change=4500, vwap=78460),
+    )
+
+    gateway.write_snapshot(future_snapshot, WorkerStatus.connected(future_snapshot.updated_at))
+
+    summary_rows = service.last_body["data"][0]["values"]
+    assert summary_rows[0][11:26] == ["Instrument", "Prev Close", "Open", "High", "Low", "LTP", "LTP Change", "", "LTP Change %", "", "Volume", "OI", "OI Change", "OI Change %", "VWAP"]
+    assert summary_rows[1][11:26] == ["BSE:SENSEX26AUGFUT", 78300, 78350, 78525, 78200, 78480, 180, "", 0.2299, "", 42000, 125000, 4500, 3.7344, 78460]
+
+
 def test_summary_and_chain_timestamps_use_plain_ist_display_format() -> None:
     service = FakeSheetsService()
     gateway = GoogleSheetGateway(service, "sheet-id")

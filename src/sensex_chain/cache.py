@@ -39,6 +39,7 @@ class ChainSnapshot:
     underlying: MarketTick
     india_vix: MarketTick
     rows: tuple[ChainRow, ...]
+    future: MarketTick | None = None
 
 @dataclass(frozen=True)
 class MarketDataCoverage:
@@ -70,7 +71,7 @@ class LatestMarketCache:
             )
             for strike, call, put in chain.strike_pairs
         )
-        return ChainSnapshot(chain.expiry,now,ticks.get(INDEX_SYMBOL,MarketTick(INDEX_SYMBOL)),ticks.get(INDIA_VIX_SYMBOL,MarketTick(INDIA_VIX_SYMBOL)),rows)
+        return ChainSnapshot(chain.expiry, now, ticks.get(INDEX_SYMBOL, MarketTick(INDEX_SYMBOL)), ticks.get(INDIA_VIX_SYMBOL, MarketTick(INDIA_VIX_SYMBOL)), rows, ticks.get(chain.future.symbol, MarketTick(chain.future.symbol)) if chain.future is not None else None)
 
 def normalize_tick(raw_tick: Mapping[str, object]) -> MarketTick | None:
     symbol=str(raw_tick.get('symbol') or raw_tick.get('symbol_name') or '').strip(); ltp=_number(raw_tick,'ltp','lp')
