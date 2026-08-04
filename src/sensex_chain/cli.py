@@ -31,6 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Stream current-expiry SENSEX options to Google Sheets")
     parser.add_argument("--segment", required=True, choices=["morning", "afternoon"])
     parser.add_argument("--dry-run", action="store_true", help="validate only the requested execution path")
+    parser.add_argument("--once", action="store_true", help="write one snapshot then exit")
     return parser
 
 
@@ -55,7 +56,7 @@ def main(argv: list[str] | None = None) -> int:
             clock=SystemClock(),
             flush_seconds=config.flush_seconds,
         )
-        return worker.run(SessionSegment.parse(args.segment))
+        return worker.run(SessionSegment.parse(args.segment), max_cycles=1 if args.once else None)
     except ConfigurationError as exc:
         print(f"Configuration error: {exc}")
         return 2

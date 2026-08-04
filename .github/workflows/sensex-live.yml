@@ -11,6 +11,12 @@ on:
         type: choice
         required: true
         options: [morning, afternoon]
+      run_mode:
+        description: Use smoke for one connection and one sheet write, then exit
+        type: choice
+        required: true
+        default: live
+        options: [live, smoke]
 
 permissions:
   contents: read
@@ -29,9 +35,13 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install .
-      - run: python -m sensex_chain --segment "$SEGMENT"
+      - run: |
+          EXTRA_ARGS=""
+          if [ "$RUN_MODE" = "smoke" ]; then EXTRA_ARGS="--once"; fi
+          python -m sensex_chain --segment "$SEGMENT" $EXTRA_ARGS
         env:
           SEGMENT: ${{ github.event_name == 'workflow_dispatch' && inputs.segment || github.event.schedule == '45 3 * * 1-5' && 'morning' || 'afternoon' }}
+          RUN_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.run_mode || 'live' }}
           FYERS_CLIENT_ID: ${{ secrets.FYERS_CLIENT_ID }}
           FYERS_SECRET_KEY: ${{ secrets.FYERS_SECRET_KEY }}
           FYERS_USER_ID: ${{ secrets.FYERS_USER_ID }}
