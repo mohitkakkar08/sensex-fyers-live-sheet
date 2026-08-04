@@ -1,4 +1,4 @@
-name: SENSEX live option chain
+﻿name: SENSEX live option chain
 
 on:
   schedule:
@@ -34,7 +34,9 @@ jobs:
           SEGMENT: ${{ github.event_name == 'workflow_dispatch' && inputs.segment || github.event.schedule == '45 3 * * 1-5' && 'morning' || 'afternoon' }}
           FYERS_CLIENT_ID: ${{ secrets.FYERS_CLIENT_ID }}
           FYERS_SECRET_KEY: ${{ secrets.FYERS_SECRET_KEY }}
-          FYERS_REFRESH_TOKEN: ${{ secrets.FYERS_REFRESH_TOKEN }}
+          FYERS_USER_ID: ${{ secrets.FYERS_USER_ID }}
           FYERS_PIN: ${{ secrets.FYERS_PIN }}
+          FYERS_TOTP_SECRET: ${{ secrets.FYERS_TOTP_SECRET }}
+          FYERS_REDIRECT_URI: ${{ secrets.FYERS_REDIRECT_URI }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
