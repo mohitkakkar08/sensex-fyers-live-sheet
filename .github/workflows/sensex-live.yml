@@ -17,6 +17,11 @@ on:
         required: true
         default: live
         options: [live, smoke]
+      debug_ticks:
+        description: Print the first five websocket ticks (manual diagnostics only)
+        type: boolean
+        required: true
+        default: false
 
 permissions:
   contents: read
@@ -38,10 +43,12 @@ jobs:
       - run: |
           EXTRA_ARGS=""
           if [ "$RUN_MODE" = "smoke" ]; then EXTRA_ARGS="--once"; fi
+          if [ "$DEBUG_TICKS" = "true" ]; then EXTRA_ARGS="$EXTRA_ARGS --debug-ticks"; fi
           python -m sensex_chain --segment "$SEGMENT" $EXTRA_ARGS
         env:
           SEGMENT: ${{ github.event_name == 'workflow_dispatch' && inputs.segment || github.event.schedule == '45 3 * * 1-5' && 'morning' || 'afternoon' }}
           RUN_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.run_mode || 'live' }}
+          DEBUG_TICKS: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_ticks || 'false' }}
           FYERS_CLIENT_ID: ${{ secrets.FYERS_CLIENT_ID }}
           FYERS_SECRET_KEY: ${{ secrets.FYERS_SECRET_KEY }}
           FYERS_USER_ID: ${{ secrets.FYERS_USER_ID }}
