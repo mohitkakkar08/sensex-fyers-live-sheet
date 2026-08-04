@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 from .cache import ChainSnapshot, MarketTick
+from .timebox import KOLKATA
 SHEET_NAME="SENSEX"; WIDTH=38
 SUMMARY_HEADERS=["Instrument","Prev Close","Open","High","Low","LTP","LTP Change","LTP Change %"]
 CHAIN_HEADERS=["CE Prev Close","CE Low","CE High","CE Open","CE Rho","CE Theta","CE Vega","CE Gamma","CE Delta","CE IV","CE OI","CE OI Change","CE OI Change %","CE Volume","CE LTP Change","CE LTP Change %","CE LTP","Strike","PE LTP","PE LTP Change","PE LTP Change %","PE Volume","PE OI Change","PE OI","PE OI Change %","PE IV","PE Delta","PE Gamma","PE Vega","PE Theta","PE Rho","PE Open","PE High","PE Low","PE Prev Close","Last Updated At","CE VWAP","PE VWAP"]
@@ -37,12 +38,12 @@ class GoogleSheetGateway:
   except Exception as exc:raise SheetGatewayError("SHEET_WRITE_FAILED") from exc
 def _summary_values(snapshot:ChainSnapshot,status:WorkerStatus)->list[list[object]]:
  i=snapshot.underlying; v=snapshot.india_vix
- return [_pad(SUMMARY_HEADERS),_pad([i.symbol,_cell(i.prev_close),_cell(i.open),_cell(i.high),_cell(i.low),_cell(i.ltp),_change(i),_change_percent(i)]),_pad([v.symbol,_cell(v.prev_close),_cell(v.open),_cell(v.high),_cell(v.low),_cell(v.ltp),_change(v),_change_percent(v)]),_pad(["Status",status.state,"Diagnostic",status.diagnostic_code,"Ticks",status.tick_count,"Option Ticks",status.option_tick_count,"Expiry",snapshot.expiry.isoformat(),"Updated",status.updated_at.isoformat()])]
+ return [_pad(SUMMARY_HEADERS),_pad([i.symbol,_cell(i.prev_close),_cell(i.open),_cell(i.high),_cell(i.low),_cell(i.ltp),_change(i),_change_percent(i)]),_pad([v.symbol,_cell(v.prev_close),_cell(v.open),_cell(v.high),_cell(v.low),_cell(v.ltp),_change(v),_change_percent(v)]),_pad(["Status",status.state,"Diagnostic",status.diagnostic_code,"Ticks",status.tick_count,"Option Ticks",status.option_tick_count,"Expiry",snapshot.expiry.isoformat(),"Updated",_timestamp(status.updated_at)])]
 def _chain_values(snapshot:ChainSnapshot)->list[list[object]]:
  values=[list(CHAIN_HEADERS)]
  for row in snapshot.rows:
   c,p=row.call,row.put
-  values.append([_cell(c.prev_close),_cell(c.low),_cell(c.high),_cell(c.open),_cell(c.rho),_cell(c.theta),_cell(c.vega),_cell(c.gamma),_cell(c.delta),_cell(c.iv),_cell(c.oi),_cell(c.oi_change),_oi_change_percent(c),_cell(c.volume),_change(c),_change_percent(c),_cell(c.ltp),float(row.strike),_cell(p.ltp),_change(p),_change_percent(p),_cell(p.volume),_cell(p.oi_change),_cell(p.oi),_oi_change_percent(p),_cell(p.iv),_cell(p.delta),_cell(p.gamma),_cell(p.vega),_cell(p.theta),_cell(p.rho),_cell(p.open),_cell(p.high),_cell(p.low),_cell(p.prev_close),snapshot.updated_at.isoformat(),_cell(c.vwap),_cell(p.vwap)])
+  values.append([_cell(c.prev_close),_cell(c.low),_cell(c.high),_cell(c.open),_cell(c.rho),_cell(c.theta),_cell(c.vega),_cell(c.gamma),_cell(c.delta),_cell(c.iv),_cell(c.oi),_cell(c.oi_change),_oi_change_percent(c),_cell(c.volume),_change(c),_change_percent(c),_cell(c.ltp),float(row.strike),_cell(p.ltp),_change(p),_change_percent(p),_cell(p.volume),_cell(p.oi_change),_cell(p.oi),_oi_change_percent(p),_cell(p.iv),_cell(p.delta),_cell(p.gamma),_cell(p.vega),_cell(p.theta),_cell(p.rho),_cell(p.open),_cell(p.high),_cell(p.low),_cell(p.prev_close),_timestamp(snapshot.updated_at),_cell(c.vwap),_cell(p.vwap)])
  return values
 def _pad(values:list[object])->list[object]:return values+[""]*(WIDTH-len(values))
 def _cell(value:float|None)->float|str:return "" if value is None else value
@@ -52,3 +53,6 @@ def _oi_change_percent(t:MarketTick)->float|str:
  if t.oi is None or t.oi_change is None:return ""
  prior=t.oi-t.oi_change
  return "" if prior==0 else round((t.oi_change/prior)*100,4)
+
+def _timestamp(value: datetime) -> str:
+ return value.astimezone(KOLKATA).strftime('%d/%m/%Y %H:%M:%S IST')

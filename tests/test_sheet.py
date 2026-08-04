@@ -146,3 +146,15 @@ def test_summary_includes_live_india_vix() -> None:
     summary_rows = service.last_body["data"][0]["values"]
     assert summary_rows[2][0] == "NSE:INDIAVIX-INDEX"
     assert summary_rows[2][5] == 14.5
+
+
+def test_summary_and_chain_timestamps_use_plain_ist_display_format() -> None:
+    service = FakeSheetsService()
+    gateway = GoogleSheetGateway(service, "sheet-id")
+
+    gateway.write_snapshot(snapshot(), WorkerStatus.connected(snapshot().updated_at))
+
+    summary_rows = service.last_body["data"][0]["values"]
+    chain_row = service.last_body["data"][1]["values"][1]
+    assert summary_rows[3][11] == "04/08/2026 09:15:00 IST"
+    assert chain_row[35] == "04/08/2026 09:15:00 IST"
