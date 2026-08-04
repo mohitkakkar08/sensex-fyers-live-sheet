@@ -1,9 +1,9 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
 
-from sensex_chain.instruments import FyersInstrumentCatalog, chunk_subscriptions
+from sensex_chain.instruments import FyersInstrumentCatalog, INDIA_VIX_SYMBOL, chunk_subscriptions
 
 
 def catalog() -> FyersInstrumentCatalog:
@@ -17,6 +17,7 @@ def test_selects_nearest_expiry_with_both_call_and_put() -> None:
     assert chain.expiry == date(2026, 8, 6)
     assert {contract.option_type for contract in chain.contracts} == {"CE", "PE"}
     assert chain.symbols[0] == "BSE:SENSEX-INDEX"
+    assert chain.symbols[1] == INDIA_VIX_SYMBOL
 
 
 def test_uses_next_expiry_from_master_when_nearest_has_expired() -> None:

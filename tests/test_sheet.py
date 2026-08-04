@@ -53,6 +53,7 @@ def snapshot() -> ChainSnapshot:
         expiry=date(2026, 8, 6),
         updated_at=now,
         underlying=MarketTick("BSE:SENSEX-INDEX", ltp=80050.0, prev_close=80000.0),
+        india_vix=MarketTick("NSE:INDIAVIX-INDEX", ltp=14.5, prev_close=14.0),
         rows=(
             ChainRow(
                 strike=Decimal("80000"),
@@ -71,7 +72,7 @@ def test_write_snapshot_uses_one_values_batch_update() -> None:
 
     assert service.values_batch_updates == 1
     assert service.last_sheet_id == "sheet-id"
-    assert [item["range"] for item in service.last_body["data"]] == ["SENSEX!A1:AL3", "SENSEX!A6:AL7"]
+    assert [item["range"] for item in service.last_body["data"]] == ["SENSEX!A1:AL4", "SENSEX!A6:AL7"]
 
 
 def test_chain_layout_matches_the_full_ce_strike_pe_display() -> None:
@@ -110,3 +111,14 @@ def test_missing_market_fields_are_written_as_blank_cells() -> None:
 
     chain_rows = service.last_body["data"][1]["values"]
     assert "" in chain_rows[1]
+
+
+def test_summary_includes_live_india_vix() -> None:
+    service = FakeSheetsService()
+    gateway = GoogleSheetGateway(service, "sheet-id")
+
+    gateway.write_snapshot(snapshot(), WorkerStatus.connected(snapshot().updated_at))
+
+    summary_rows = service.last_body["data"][0]["values"]
+    assert summary_rows[2][0] == "NSE:INDIAVIX-INDEX"
+    assert summary_rows[2][5] == 14.5

@@ -7,6 +7,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Iterable, Sequence
 INSTRUMENT_MASTER_URL="https://public.fyers.in/sym_details/BSE_FO.csv"
 INDEX_SYMBOL="BSE:SENSEX-INDEX"
+INDIA_VIX_SYMBOL="NSE:INDIAVIX-INDEX"
 class InstrumentDiscoveryError(ValueError): pass
 @dataclass(frozen=True)
 class OptionContract:
@@ -15,15 +16,14 @@ class OptionContract:
 class CurrentExpiryChain:
     expiry:date; contracts:tuple[OptionContract,...]
     @property
-    def symbols(self)->tuple[str,...]: return (INDEX_SYMBOL,)+tuple(c.symbol for c in self.contracts)
+    def symbols(self)->tuple[str,...]: return (INDEX_SYMBOL,INDIA_VIX_SYMBOL)+tuple(c.symbol for c in self.contracts)
 class FyersInstrumentCatalog:
     def __init__(self,contracts:Iterable[OptionContract])->None: self._contracts=tuple(contracts)
     @classmethod
     def from_csv(cls,contents:str)->"FyersInstrumentCatalog":
         rows=list(csv.reader(io.StringIO(contents)))
         if not rows: raise InstrumentDiscoveryError("INSTRUMENT_MASTER_EMPTY")
-        contracts=[]
-        header={_normalize_header(v) for v in rows[0]}
+        contracts=[]; header={_normalize_header(v) for v in rows[0]}
         if "symbolticker" in header or "underlyingsymbol" in header:
             for row in csv.DictReader(io.StringIO(contents)):
                 c=_parse_named(row)
@@ -36,8 +36,7 @@ class FyersInstrumentCatalog:
     @classmethod
     def download(cls,http:object)->"FyersInstrumentCatalog":
         try:
-            response=http.get(INSTRUMENT_MASTER_URL,timeout=30); response.raise_for_status()
-            return cls.from_csv(response.text)
+            response=http.get(INSTRUMENT_MASTER_URL,timeout=30); response.raise_for_status(); return cls.from_csv(response.text)
         except InstrumentDiscoveryError: raise
         except Exception: raise InstrumentDiscoveryError("INSTRUMENT_MASTER_DOWNLOAD") from None
     def current_sensex_chain(self,today:date)->CurrentExpiryChain:

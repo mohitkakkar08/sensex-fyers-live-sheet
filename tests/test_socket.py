@@ -53,3 +53,22 @@ def test_socket_start_failure_has_a_safe_diagnostic_code() -> None:
         feed.start(["BSE:SENSEX-INDEX"], lambda tick: None)
 
     assert str(error.value) == "SOCKET_START_FAILED"
+
+
+def test_socket_does_not_close_before_the_sdk_reports_subscription_ready() -> None:
+    created: list[FakeDataSocket] = []
+
+    class UnreadySocket(FakeDataSocket):
+        def connect(self) -> None:
+            self.connect_called = True
+
+    def factory(**kwargs: object) -> UnreadySocket:
+        socket = UnreadySocket(**kwargs)
+        created.append(socket)
+        return socket
+
+    feed = FyersDataFeed("app:token", socket_factory=factory)
+    feed.start(["BSE:SENSEX-INDEX"], lambda tick: None)
+    feed.stop()
+
+    assert created[0].close_called is False

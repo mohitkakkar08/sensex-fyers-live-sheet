@@ -90,3 +90,34 @@ def test_worker_surfaces_a_socket_runtime_diagnostic_before_any_tick_arrives() -
 
     assert worker.run(SessionSegment.MORNING, max_cycles=1) == 0
     assert gateway.statuses[0].diagnostic_code == "SOCKET_RUNTIME_ERROR"
+
+
+def test_worker_uses_one_socket_for_a_large_current_expiry_chain() -> None:
+    class LargeCatalog:
+        def current_sensex_chain(self, today: date) -> CurrentExpiryChain:
+            contracts = tuple(
+                OptionContract(f"BSE:SENSEX26AUG{70000 + strike}{option_type}", "SENSEX", date(2026, 8, 6), Decimal(70000 + strike), option_type)
+                for strike in range(101)
+                for option_type in ("CE", "PE")
+            )
+            return CurrentExpiryChain(date(2026, 8, 6), contracts)
+
+    class RecordingFeed(Feed):
+        def __init__(self) -> None:
+            super().__init__()
+            self.symbols = []
+
+        def start(self, symbols, on_tick) -> None:
+            self.symbols = list(symbols)
+
+    feeds = []
+    def factory(token):
+        feed = RecordingFeed()
+        feeds.append(feed)
+        return feed
+
+    worker = LiveChainWorker(LargeCatalog(), TokenProvider(), factory, LatestMarketCache(), Gateway(), Clock(), 10)
+
+    assert worker.run(SessionSegment.MORNING, max_cycles=1) == 0
+    assert len(feeds) == 1
+    assert len(feeds[0].symbols) == 204
